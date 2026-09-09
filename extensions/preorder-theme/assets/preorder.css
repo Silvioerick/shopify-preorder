@@ -1,0 +1,109 @@
+.tf-preorder {
+  margin: 16px 0;
+  font-family: inherit;
+}
+
+.tf-preorder__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.tf-preorder__badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 5px 11px;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 1.2;
+  font-weight: 800;
+  letter-spacing: .02em;
+}
+
+.tf-preorder__badge--preorder {
+  background: #dff7fb;
+  color: #076b78;
+}
+
+.tf-preorder__badge--forecast {
+  background: #fff2b9;
+  color: #725600;
+}
+
+.tf-preorder__box {
+  border: 1px solid rgba(0, 0, 0, .12);
+  border-radius: 12px;
+  padding: 14px;
+  background: rgba(250, 250, 250, .72);
+}
+
+.tf-preorder__prices {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.tf-preorder__prices > div {
+  display: grid;
+  gap: 3px;
+}
+
+.tf-preorder__label {
+  font-size: 11px;
+  opacity: .67;
+}
+
+.tf-preorder__prices strong {
+  font-size: 15px;
+}
+
+.tf-preorder__deposit {
+  color: #076b78;
+}
+
+.tf-preorder__remaining {
+  margin: 12px 0 0;
+  font-size: 13px;
+}
+
+.tf-preorder__form {
+  margin-top: 13px;
+}
+
+.tf-preorder__button {
+  width: 100%;
+  min-height: 46px;
+  border: 0;
+  border-radius: 8px;
+  padding: 10px 16px;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 800;
+  background: #111;
+  color: #fff;
+}
+
+.tf-preorder__button:hover {
+  opacity: .9;
+}
+
+.tf-preorder__button--disabled {
+  margin-top: 13px;
+  cursor: not-allowed;
+  opacity: .45;
+}
+
+.tf-preorder__note {
+  margin: 9px 0 0;
+  font-size: 11px;
+  line-height: 1.45;
+  opacity: .7;
+}
+
+@media (max-width: 640px) {
+  .tf-preorder__prices {
+    grid-template-columns: 1fr;
+  }
+}
