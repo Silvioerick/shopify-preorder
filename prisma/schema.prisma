@@ -47,6 +47,7 @@ model ProductPreorder {
   shop                   String
   shopifyProductId       String
   shopifyVariantId       String?
+  productTitle           String?
   tagRuleId              String
   expectedAt             DateTime?
   expectedLabel          String?
@@ -70,7 +71,8 @@ model Reservation {
   id                  String            @id @default(cuid())
   shop                String
   preorderId          String
-  shopifyOrderId      String            @unique
+  shopifyOrderId      String
+  shopifyLineItemId   String?
   shopifyOrderName    String?
   shopifyCustomerId   String?
   customerEmail       String?
@@ -88,8 +90,10 @@ model Reservation {
 
   preorder ProductPreorder @relation(fields: [preorderId], references: [id], onDelete: Restrict)
 
+  @@unique([shop, shopifyOrderId, preorderId])
   @@index([shop, status])
   @@index([preorderId])
+  @@index([shopifyOrderId])
 }
 
 enum ReservationStatus {
