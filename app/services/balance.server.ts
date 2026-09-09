@@ -49,7 +49,9 @@ export async function createAndSendBalanceInvoice(args: {
             amount: balance.toFixed(2),
             currencyCode: "BRL",
           },
-          requiresShipping: true,
+          // O frete é informado manualmente abaixo. O item de saldo não deve
+          // disparar um segundo cálculo de frete no checkout da invoice.
+          requiresShipping: false,
           taxable: false,
           customAttributes: [
             { key: "_balance_reservation_id", value: reservation.id },
@@ -82,7 +84,7 @@ export async function createAndSendBalanceInvoice(args: {
       { variables: { input } },
     );
     const createBody = await createResponse.json() as any;
-    assertNoUserErrors(createBody.data?.draftOrderCreate?.userErrors, "Falha ao criar cobrança do saldo");
+    assertNoUserErrors(bodyErrors(createBody.data?.draftOrderCreate?.userErrors), "Falha ao criar cobrança do saldo");
     const draftOrder = createBody.data?.draftOrderCreate?.draftOrder;
     if (!draftOrder) throw new Error("A Shopify não retornou o pedido de cobrança do saldo.");
 
@@ -112,7 +114,7 @@ export async function createAndSendBalanceInvoice(args: {
       },
     );
     const sendBody = await sendResponse.json() as any;
-    assertNoUserErrors(sendBody.data?.draftOrderInvoiceSend?.userErrors, "Falha ao enviar cobrança por e-mail");
+    assertNoUserErrors(bodyErrors(sendBody.data?.draftOrderInvoiceSend?.userErrors), "Falha ao enviar cobrança por e-mail");
     invoiceUrl = sendBody.data?.draftOrderInvoiceSend?.draftOrder?.invoiceUrl || invoiceUrl;
   }
 
@@ -132,4 +134,8 @@ export async function createAndSendBalanceInvoice(args: {
     emailSent: Boolean(reservation.customerEmail),
     total: Number(reservation.balanceTotal) + shippingAmount,
   };
+}
+
+function bodyErrors(errors: Array<{ message: string }> | undefined) {
+  return errors;
 }
