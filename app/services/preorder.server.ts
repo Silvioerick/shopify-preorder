@@ -169,12 +169,20 @@ async function enableInventoryTracking(admin: AdminClient, inventoryItemId: stri
     `#graphql
       mutation TrackDepositInventory($id: ID!, $input: InventoryItemInput!) {
         inventoryItemUpdate(id: $id, input: $input) {
-          inventoryItem { id tracked }
+          inventoryItem { id tracked requiresShipping }
           userErrors { field message }
         }
       }
     `,
-    { variables: { id: inventoryItemId, input: { tracked: true } } },
+    {
+      variables: {
+        id: inventoryItemId,
+        input: {
+          tracked: true,
+          requiresShipping: false,
+        },
+      },
+    },
   );
   const body = await response.json() as any;
   assertNoUserErrors(body.data?.inventoryItemUpdate?.userErrors, "Falha ao ativar controle de estoque da reserva");
@@ -260,7 +268,7 @@ async function publishDepositProduct(admin: AdminClient, productId: string) {
     { variables: { id: productId, input: [{ publicationId: onlineStore.id }] } },
   );
   const publishBody = await publishResponse.json() as any;
-  assertNoUserErrors(publishBody.data?.publishablePublish?.userErrors, "Falha ao publicar produto de reserva");
+  assertNoUserErrors(bodyErrors(publishBody.data?.publishablePublish?.userErrors), "Falha ao publicar produto de reserva");
 }
 
 async function setPreorderMetafields(
@@ -293,7 +301,7 @@ async function setPreorderMetafields(
     { variables: { metafields } },
   );
   const body = await response.json() as any;
-  assertNoUserErrors(body.data?.metafieldsSet?.userErrors, "Falha ao salvar dados da pré-venda no produto");
+  assertNoUserErrors(bodyErrors(body.data?.metafieldsSet?.userErrors), "Falha ao salvar dados da pré-venda no produto");
 }
 
 export async function syncPreorderDeposit(args: {
@@ -408,5 +416,9 @@ export async function disablePreorderMetafield(admin: AdminClient, productId: st
     },
   );
   const body = await response.json() as any;
-  assertNoUserErrors(body.data?.metafieldsSet?.userErrors, "Falha ao desativar pré-venda");
+  assertNoUserErrors(bodyErrors(body.data?.metafieldsSet?.userErrors), "Falha ao desativar pré-venda");
+}
+
+function bodyErrors(errors: Array<{ message: string }> | undefined) {
+  return errors;
 }
