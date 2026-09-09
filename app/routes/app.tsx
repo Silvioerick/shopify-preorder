@@ -14,9 +14,6 @@ export default function AppLayout() {
 
   return (
     <AppProvider embedded apiKey={apiKey}>
-      <s-app-nav>
-        <s-link href="/app">Pré-vendas</s-link>
-      </s-app-nav>
       <Outlet />
     </AppProvider>
   );
