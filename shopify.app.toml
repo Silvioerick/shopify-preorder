@@ -1,20 +1,20 @@
-client_id = ""
-name = "Shopify Preorder"
-handle = "shopify-preorder"
-application_url = "https://example.com"
+client_id = "66bc8d9c987f2f19758293cd78f5d469"
+name = "preorder-digitalsac"
+handle = "preorder-digitalsac"
+application_url = "https://preorder.digitalsac.io"
 embedded = true
 
 [build]
-automatically_update_urls_on_dev = true
+automatically_update_urls_on_dev = false
 
 [access_scopes]
 scopes = "read_products,write_products,read_orders,write_orders,read_inventory,write_inventory,read_locations,read_publications,write_publications,read_draft_orders,write_draft_orders"
 
 [auth]
 redirect_urls = [
-  "https://example.com/auth/callback",
-  "https://example.com/auth/shopify/callback",
-  "https://example.com/api/auth/callback"
+  "https://preorder.digitalsac.io/auth/callback",
+  "https://preorder.digitalsac.io/auth/shopify/callback",
+  "https://preorder.digitalsac.io/api/auth/callback"
 ]
 
 [webhooks]
