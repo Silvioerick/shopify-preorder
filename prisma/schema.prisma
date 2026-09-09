@@ -82,6 +82,7 @@ model Reservation {
   balanceUnitPrice    Decimal           @db.Decimal(12, 2)
   depositTotal        Decimal           @db.Decimal(12, 2)
   balanceTotal        Decimal           @db.Decimal(12, 2)
+  shippingAmount      Decimal           @default(0) @db.Decimal(12, 2)
   status              ReservationStatus @default(DEPOSIT_PAID)
   balanceDraftOrderId String?
   balanceInvoiceUrl   String?
