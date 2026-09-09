@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import prisma from "../db.server";
 
 type AdminClient = {
@@ -207,8 +208,8 @@ async function activateOrSetInventory(
 
   const setResponse = await admin.graphql(
     `#graphql
-      mutation SetDepositInventory($input: InventorySetQuantitiesInput!) {
-        inventorySetQuantities(input: $input) {
+      mutation SetDepositInventory($input: InventorySetQuantitiesInput!, $idempotencyKey: String!) {
+        inventorySetQuantities(input: $input) @idempotent(key: $idempotencyKey) {
           userErrors { field message }
         }
       }
@@ -218,9 +219,14 @@ async function activateOrSetInventory(
         input: {
           name: "available",
           reason: "correction",
-          ignoreCompareQuantity: true,
-          quantities: [{ inventoryItemId, locationId, quantity }],
+          quantities: [{
+            inventoryItemId,
+            locationId,
+            quantity,
+            changeFromQuantity: null,
+          }],
         },
+        idempotencyKey: randomUUID(),
       },
     },
   );
