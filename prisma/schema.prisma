@@ -1,0 +1,103 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Session {
+  id                  String    @id
+  shop                String
+  state               String
+  isOnline            Boolean   @default(false)
+  scope               String?
+  expires             DateTime?
+  accessToken         String
+  userId              BigInt?
+  firstName           String?
+  lastName            String?
+  email               String?
+  accountOwner        Boolean   @default(false)
+  locale              String?
+  collaborator        Boolean?  @default(false)
+  emailVerified       Boolean?  @default(false)
+  refreshToken        String?
+  refreshTokenExpires DateTime?
+}
+
+model PreorderTagRule {
+  id        String   @id @default(cuid())
+  shop      String
+  tag       String
+  capacity  Int
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  products ProductPreorder[]
+
+  @@unique([shop, tag])
+  @@index([shop, active])
+}
+
+model ProductPreorder {
+  id                     String   @id @default(cuid())
+  shop                   String
+  shopifyProductId       String
+  shopifyVariantId       String?
+  tagRuleId              String
+  expectedAt             DateTime?
+  expectedLabel          String?
+  depositPercent         Decimal  @default(20) @db.Decimal(5, 2)
+  active                 Boolean  @default(true)
+  depositProductId       String?
+  depositVariantId       String?
+  depositInventoryItemId String?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  tagRule      PreorderTagRule @relation(fields: [tagRuleId], references: [id], onDelete: Restrict)
+  reservations Reservation[]
+
+  @@unique([shop, shopifyProductId, shopifyVariantId])
+  @@index([shop, active])
+  @@index([tagRuleId])
+}
+
+model Reservation {
+  id                  String            @id @default(cuid())
+  shop                String
+  preorderId          String
+  shopifyOrderId      String            @unique
+  shopifyOrderName    String?
+  shopifyCustomerId   String?
+  customerEmail       String?
+  quantity            Int
+  originalUnitPrice   Decimal           @db.Decimal(12, 2)
+  depositUnitPrice    Decimal           @db.Decimal(12, 2)
+  balanceUnitPrice    Decimal           @db.Decimal(12, 2)
+  depositTotal        Decimal           @db.Decimal(12, 2)
+  balanceTotal        Decimal           @db.Decimal(12, 2)
+  status              ReservationStatus @default(DEPOSIT_PAID)
+  balanceDraftOrderId String?
+  balanceInvoiceUrl   String?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+
+  preorder ProductPreorder @relation(fields: [preorderId], references: [id], onDelete: Restrict)
+
+  @@index([shop, status])
+  @@index([preorderId])
+}
+
+enum ReservationStatus {
+  DEPOSIT_PAID
+  WAITING_PRODUCT
+  BALANCE_PENDING
+  BALANCE_INVOICED
+  BALANCE_PAID
+  CANCELLED
+  REFUNDED
+}
