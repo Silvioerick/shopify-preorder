@@ -68,6 +68,7 @@ CREATE TABLE "Reservation" (
     "balanceUnitPrice" DECIMAL(12,2) NOT NULL,
     "depositTotal" DECIMAL(12,2) NOT NULL,
     "balanceTotal" DECIMAL(12,2) NOT NULL,
+    "shippingAmount" DECIMAL(12,2) NOT NULL DEFAULT 0,
     "status" "ReservationStatus" NOT NULL DEFAULT 'DEPOSIT_PAID',
     "balanceDraftOrderId" TEXT,
     "balanceInvoiceUrl" TEXT,
