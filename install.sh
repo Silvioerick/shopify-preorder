@@ -25,11 +25,25 @@ if [ ! -f .env ]; then
   exit 0
 fi
 
+# Mantém o projeto longe das portas padrão da VPS.
+if grep -q '^APP_PORT=' .env; then
+  sed -i 's/^APP_PORT=.*/APP_PORT=3187/' .env
+else
+  echo 'APP_PORT=3187' >> .env
+fi
+
+if grep -q '^POSTGRES_PORT=' .env; then
+  sed -i 's/^POSTGRES_PORT=.*/POSTGRES_PORT=55432/' .env
+else
+  echo 'POSTGRES_PORT=55432' >> .env
+fi
+
 if grep -qE '^SHOPIFY_API_KEY=$|^SHOPIFY_API_SECRET=$|^SHOPIFY_APP_URL=$' .env; then
   echo "Preencha SHOPIFY_API_KEY, SHOPIFY_API_SECRET e SHOPIFY_APP_URL no .env."
   exit 1
 fi
 
+echo "Portas configuradas: app=3187, postgres interno=55432"
 echo "Subindo PostgreSQL e aplicação..."
 docker compose up -d --build
 
