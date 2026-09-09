@@ -2,10 +2,10 @@ import type { ActionFunctionArgs } from "react-router";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 
-type Property = { name?: string; value?: string };
+type Property = { name?: string; key?: string; value?: string };
 
 function propertyValue(properties: Property[] | undefined, name: string) {
-  return properties?.find((property) => property.name === name)?.value || null;
+  return properties?.find((property) => property.name === name || property.key === name)?.value || null;
 }
 
 export const action = async ({ request }: ActionFunctionArgs) => {
@@ -16,7 +16,24 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const customerId = order.customer?.id ? String(order.customer.id) : null;
   const customerEmail = order.email || order.customer?.email || null;
 
+  const orderBalanceReservationId = propertyValue(order.note_attributes, "_balance_reservation_id");
+  if (orderBalanceReservationId) {
+    await prisma.reservation.updateMany({
+      where: { id: orderBalanceReservationId, shop },
+      data: { status: "BALANCE_PAID" },
+    });
+  }
+
   for (const lineItem of order.line_items || []) {
+    const balanceReservationId = propertyValue(lineItem.properties, "_balance_reservation_id");
+    if (balanceReservationId) {
+      await prisma.reservation.updateMany({
+        where: { id: balanceReservationId, shop },
+        data: { status: "BALANCE_PAID" },
+      });
+      continue;
+    }
+
     const preorderId = propertyValue(lineItem.properties, "_preorder_id");
     if (!preorderId) continue;
 
