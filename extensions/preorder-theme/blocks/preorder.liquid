@@ -1,0 +1,119 @@
+{% liquid
+  assign preorder_active = product.metafields.topfuel_preorder.active.value
+  assign expected_label = product.metafields.topfuel_preorder.expected_label.value
+  assign deposit_percent = product.metafields.topfuel_preorder.deposit_percent.value
+  assign preorder_id = product.metafields.topfuel_preorder.config_id.value
+  assign deposit_product = product.metafields.topfuel_preorder.deposit_product.value
+  assign original_variant = product.selected_or_first_available_variant
+  if deposit_product
+    assign deposit_variant = deposit_product.selected_or_first_available_variant
+  endif
+%}
+
+{% if preorder_active == true and deposit_product and deposit_variant %}
+  <div class="tf-preorder" {{ block.shopify_attributes }}>
+    <div class="tf-preorder__badges">
+      <span class="tf-preorder__badge tf-preorder__badge--preorder">{{ block.settings.preorder_badge }}</span>
+      {% if expected_label != blank %}
+        <span class="tf-preorder__badge tf-preorder__badge--forecast">{{ block.settings.forecast_prefix }} {{ expected_label }}</span>
+      {% endif %}
+    </div>
+
+    <div class="tf-preorder__box">
+      <div class="tf-preorder__prices">
+        <div>
+          <span class="tf-preorder__label">Valor do produto</span>
+          <strong>{{ original_variant.price | money }}</strong>
+        </div>
+        <div>
+          <span class="tf-preorder__label">Entrada agora{% if deposit_percent %} ({{ deposit_percent }}%){% endif %}</span>
+          <strong class="tf-preorder__deposit">{{ deposit_variant.price | money }}</strong>
+        </div>
+        <div>
+          <span class="tf-preorder__label">Saldo na chegada</span>
+          <strong>{{ original_variant.price | minus: deposit_variant.price | money }}</strong>
+        </div>
+      </div>
+
+      {% if block.settings.show_remaining and deposit_variant.inventory_management %}
+        <p class="tf-preorder__remaining">
+          {% if deposit_variant.available %}
+            Restam <strong>{{ deposit_variant.inventory_quantity }}</strong> unidade(s) para pré-venda.
+          {% else %}
+            Pré-venda esgotada.
+          {% endif %}
+        </p>
+      {% endif %}
+
+      {% if deposit_variant.available %}
+        <form method="post" action="{{ routes.cart_add_url }}" class="tf-preorder__form">
+          <input type="hidden" name="id" value="{{ deposit_variant.id }}">
+          <input type="hidden" name="quantity" value="1">
+          <input type="hidden" name="properties[_preorder_id]" value="{{ preorder_id | escape }}">
+          <input type="hidden" name="properties[_original_product_id]" value="{{ product.id }}">
+          <input type="hidden" name="properties[_original_variant_id]" value="{{ original_variant.id }}">
+          <input type="hidden" name="properties[_original_unit_price]" value="{{ original_variant.price }}">
+          <input type="hidden" name="properties[_preorder_expected]" value="{{ expected_label | escape }}">
+          <input type="hidden" name="properties[Pré-venda]" value="{{ expected_label | default: 'Sim' | escape }}">
+          <button type="submit" class="tf-preorder__button">
+            {{ block.settings.button_text }} {{ deposit_variant.price | money }}
+          </button>
+        </form>
+      {% else %}
+        <button type="button" class="tf-preorder__button tf-preorder__button--disabled" disabled>
+          {{ block.settings.sold_out_text }}
+        </button>
+      {% endif %}
+
+      {% if block.settings.note != blank %}
+        <p class="tf-preorder__note">{{ block.settings.note }}</p>
+      {% endif %}
+    </div>
+  </div>
+{% endif %}
+
+{% schema %}
+{
+  "name": "Pré-venda TopFuel",
+  "target": "section",
+  "stylesheet": "preorder.css",
+  "settings": [
+    {
+      "type": "text",
+      "id": "preorder_badge",
+      "label": "Texto do selo de pré-venda",
+      "default": "PRÉ-VENDA"
+    },
+    {
+      "type": "text",
+      "id": "forecast_prefix",
+      "label": "Prefixo da previsão",
+      "default": "PREVISÃO DE ENVIO:"
+    },
+    {
+      "type": "text",
+      "id": "button_text",
+      "label": "Texto do botão",
+      "default": "RESERVAR POR"
+    },
+    {
+      "type": "text",
+      "id": "sold_out_text",
+      "label": "Texto quando esgotado",
+      "default": "PRÉ-VENDA ESGOTADA"
+    },
+    {
+      "type": "checkbox",
+      "id": "show_remaining",
+      "label": "Mostrar quantidade restante",
+      "default": true
+    },
+    {
+      "type": "textarea",
+      "id": "note",
+      "label": "Aviso abaixo do botão",
+      "default": "Você paga a entrada agora. O saldo será cobrado quando o produto chegar."
+    }
+  ]
+}
+{% endschema %}
