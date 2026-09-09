@@ -50,7 +50,104 @@ Nissan R33   -> Prevenda2 -> 3 unidades -> previsão MAR/2027
 - Shopify Admin GraphQL API `2026-07`
 - Theme App Extension
 
-## Desenvolvimento
+## Deploy com Docker Compose
+
+O repositório já inclui:
+
+- `Dockerfile` multi-stage com Node.js 22;
+- `docker-compose.yml` com app + PostgreSQL;
+- volume persistente do PostgreSQL;
+- healthcheck do banco e da aplicação;
+- migrations Prisma automáticas no start do container;
+- `.env.docker.example`;
+- `install.sh` para preparar e subir o stack.
+
+### Instalação rápida
+
+```bash
+git clone https://github.com/Silvioerick/shopify-preorder.git
+cd shopify-preorder
+chmod +x install.sh
+./install.sh
+```
+
+Na primeira execução ele cria o `.env` e uma senha aleatória para o PostgreSQL. Depois edite:
+
+```bash
+nano .env
+```
+
+Preencha:
+
+```env
+SHOPIFY_API_KEY=
+SHOPIFY_API_SECRET=
+SHOPIFY_APP_URL=https://preorder.seudominio.com.br
+```
+
+Depois execute novamente:
+
+```bash
+./install.sh
+```
+
+Ou diretamente:
+
+```bash
+docker compose up -d --build
+```
+
+Ver containers:
+
+```bash
+docker compose ps
+```
+
+Ver logs:
+
+```bash
+docker compose logs -f app
+```
+
+Parar:
+
+```bash
+docker compose down
+```
+
+Atualizar:
+
+```bash
+git pull
+docker compose up -d --build
+```
+
+O PostgreSQL permanece salvo no volume `shopify_preorder_pgdata`.
+
+### Backup do PostgreSQL
+
+```bash
+docker compose exec -T postgres pg_dump -U shopify_preorder shopify_preorder > backup-shopify-preorder.sql
+```
+
+Restaurar:
+
+```bash
+cat backup-shopify-preorder.sql | docker compose exec -T postgres psql -U shopify_preorder shopify_preorder
+```
+
+## Shopify CLI
+
+O Shopify CLI continua no **host**, não dentro do container. O projeto já pode ser vinculado/deployado normalmente:
+
+```bash
+shopify app config link
+shopify app deploy
+```
+
+Depois coloque no `.env` os dados do app e a URL pública usada pela Shopify.
+
+## Desenvolvimento sem Docker
 
 Requisitos:
 
@@ -60,25 +157,8 @@ Requisitos:
 - uma loja de desenvolvimento/teste Shopify
 
 ```bash
-git clone https://github.com/Silvioerick/shopify-preorder.git
-cd shopify-preorder
 npm install
 cp .env.example .env
-```
-
-Crie o banco PostgreSQL e ajuste `DATABASE_URL`.
-
-Depois vincule o projeto ao app Shopify:
-
-```bash
-shopify app config link
-```
-
-A CLI preencherá/ajustará o `client_id` e as URLs de desenvolvimento.
-
-Execute:
-
-```bash
 npx prisma migrate deploy
 npm run dev
 ```
@@ -108,4 +188,4 @@ npm run dev
 
 ## Status
 
-MVP funcional compilando no GitHub Actions. Próximo passo: vincular a uma loja Shopify de teste e validar as mutações GraphQL e o checkout real com Mercado Pago/PIX.
+MVP funcional compilando no GitHub Actions. O próximo passo é validar o deploy Docker em uma loja Shopify de teste e confirmar o checkout real com Mercado Pago/PIX.
