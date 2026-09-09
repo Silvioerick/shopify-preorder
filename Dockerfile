@@ -25,6 +25,6 @@ COPY --from=build /app/node_modules/@prisma ./node_modules/@prisma
 COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-EXPOSE 3000
+EXPOSE 3187
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["npm","run","start"]
