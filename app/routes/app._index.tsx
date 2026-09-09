@@ -7,6 +7,7 @@ import {
   getProductSnapshot,
   syncPreorderDeposit,
 } from "../services/preorder.server";
+import { createAndSendBalanceInvoice } from "../services/balance.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { admin, session } = await authenticate.admin(request);
@@ -61,14 +62,13 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       const capacity = config?.tagRule.capacity ?? matchedRule?.capacity ?? 0;
 
       return {
-        id: product.id,
-        title: product.title,
-        handle: product.handle,
-        status: product.status,
-        tags: product.tags || [],
+        id: product.id as string,
+        title: product.title as string,
+        handle: product.handle as string,
+        status: product.status as string,
+        tags: (product.tags || []) as string[],
         image: product.featuredMedia?.preview?.image?.url || null,
-        variantId: variant?.id || null,
-        price: variant?.price || "0.00",
+        price: String(variant?.price || "0.00"),
         inventoryQuantity: variant?.inventoryQuantity ?? null,
         matchedRule: matchedRule
           ? { id: matchedRule.id, tag: matchedRule.tag, capacity: matchedRule.capacity }
@@ -81,7 +81,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
               depositPercent: Number(config.depositPercent),
               tag: config.tagRule.tag,
               capacity: config.tagRule.capacity,
-              depositProductId: config.depositProductId,
             }
           : null,
         sold,
@@ -94,20 +93,28 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     where: { shop },
     include: { preorder: { select: { productTitle: true, expectedLabel: true } } },
     orderBy: { createdAt: "desc" },
-    take: 50,
+    take: 100,
   });
+
+  const validReservations = reservations.filter(
+    (reservation) => !["CANCELLED", "REFUNDED"].includes(reservation.status),
+  );
 
   const summary = {
     activeProducts: configs.filter((config) => config.active).length,
-    reservations: reservations.filter((reservation) => !["CANCELLED", "REFUNDED"].includes(reservation.status)).length,
-    pendingBalance: reservations
-      .filter((reservation) => !["CANCELLED", "REFUNDED", "BALANCE_PAID"].includes(reservation.status))
-      .reduce((sum, reservation) => sum + Number(reservation.balanceTotal), 0),
+    reservations: validReservations.length,
+    pendingBalance: validReservations
+      .filter((reservation) => reservation.status !== "BALANCE_PAID")
+      .reduce((sum, reservation) => sum + Number(reservation.balanceTotal) + Number(reservation.shippingAmount), 0),
   };
 
   return {
     shop,
-    rules: rules.map((rule) => ({ ...rule, createdAt: rule.createdAt.toISOString(), updatedAt: rule.updatedAt.toISOString() })),
+    rules: rules.map((rule) => ({
+      id: rule.id,
+      tag: rule.tag,
+      capacity: rule.capacity,
+    })),
     products,
     reservations: reservations.map((reservation) => ({
       id: reservation.id,
@@ -117,8 +124,10 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       quantity: reservation.quantity,
       depositTotal: Number(reservation.depositTotal),
       balanceTotal: Number(reservation.balanceTotal),
+      shippingAmount: Number(reservation.shippingAmount),
       status: reservation.status,
       email: reservation.customerEmail,
+      invoiceUrl: reservation.balanceInvoiceUrl,
       createdAt: reservation.createdAt.toISOString(),
     })),
     summary,
@@ -168,7 +177,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         return { ok: false, error: "A entrada deve ficar entre 0 e 100%." };
       }
 
-      const rule = await prisma.preorderTagRule.findFirst({ where: { id: ruleId, shop, active: true } });
+      const rule = await prisma.preorderTagRule.findFirst({
+        where: { id: ruleId, shop, active: true },
+      });
       if (!rule) return { ok: false, error: "Regra de tag não encontrada." };
 
       const product = await getProductSnapshot(admin, productId);
@@ -177,7 +188,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       }
 
       const existing = await prisma.productPreorder.findFirst({
-        where: { shop, shopifyProductId: product.id, shopifyVariantId: product.variant.id },
+        where: {
+          shop,
+          shopifyProductId: product.id,
+          shopifyVariantId: product.variant.id,
+        },
       });
 
       const preorder = existing
@@ -240,6 +255,43 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       return { ok: true, message: "Pré-venda desativada para esse produto." };
     }
 
+    if (intent === "mark-arrived") {
+      const preorderId = String(form.get("preorderId") || "");
+      const preorder = await prisma.productPreorder.findFirst({ where: { id: preorderId, shop } });
+      if (!preorder) return { ok: false, error: "Pré-venda não encontrada." };
+
+      const result = await prisma.reservation.updateMany({
+        where: {
+          shop,
+          preorderId,
+          status: { in: ["DEPOSIT_PAID", "WAITING_PRODUCT"] },
+        },
+        data: { status: "BALANCE_PENDING" },
+      });
+      return { ok: true, message: `${result.count} reserva(s) pronta(s) para cobrança do saldo.` };
+    }
+
+    if (intent === "send-balance") {
+      const reservationId = String(form.get("reservationId") || "");
+      const shippingAmount = Number(form.get("shippingAmount") || 0);
+      if (!Number.isFinite(shippingAmount) || shippingAmount < 0) {
+        return { ok: false, error: "Valor de frete inválido." };
+      }
+
+      const invoice = await createAndSendBalanceInvoice({
+        admin,
+        shop,
+        reservationId,
+        shippingAmount,
+      });
+      return {
+        ok: true,
+        message: invoice.emailSent
+          ? `Cobrança enviada. Total: ${money(invoice.total)}.`
+          : `Cobrança criada. Cliente sem e-mail; copie o link de pagamento.`,
+      };
+    }
+
     return { ok: false, error: "Ação desconhecida." };
   } catch (error) {
     console.error(error);
@@ -250,9 +302,20 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 const money = (value: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value);
 
+const statusLabel: Record<string, string> = {
+  DEPOSIT_PAID: "Entrada paga",
+  WAITING_PRODUCT: "Aguardando produto",
+  BALANCE_PENDING: "Cobrar saldo",
+  BALANCE_INVOICED: "Cobrança enviada",
+  BALANCE_PAID: "Saldo pago",
+  CANCELLED: "Cancelado",
+  REFUNDED: "Reembolsado",
+};
+
 export default function PreorderDashboard() {
   const data = useLoaderData<typeof loader>();
-  const actionData = useActionData<typeof action>();
+  const rawActionData = useActionData<typeof action>();
+  const actionData = rawActionData as { ok: boolean; message?: string; error?: string } | undefined;
   const navigation = useNavigation();
   const busy = navigation.state !== "idle";
 
@@ -281,7 +344,10 @@ export default function PreorderDashboard() {
 
       <section className="card">
         <div className="sectionTitle">
-          <div><h2>Regras por tag</h2><p>Ex.: <code>Prevenda2</code> pode significar 3 unidades disponíveis por produto.</p></div>
+          <div>
+            <h2>Regras por tag</h2>
+            <p>Ex.: <code>Prevenda2</code> pode significar 3 unidades disponíveis por produto.</p>
+          </div>
         </div>
         <Form method="post" className="ruleForm">
           <input type="hidden" name="intent" value="save-rule" />
@@ -306,7 +372,7 @@ export default function PreorderDashboard() {
 
       <section className="card">
         <div className="sectionTitle">
-          <div><h2>Produtos encontrados</h2><p>Mostramos produtos que possuem alguma tag configurada acima.</p></div>
+          <div><h2>Produtos encontrados</h2><p>Produtos com alguma das tags de pré-venda configuradas.</p></div>
         </div>
         <div className="products">
           {data.products.map((product) => {
@@ -361,15 +427,24 @@ export default function PreorderDashboard() {
                     </button>
                   </Form>
                 ) : (
-                  <p className="warning">A tag original foi removida. A configuração permanece no histórico.</p>
+                  <p className="warning">A tag foi removida do produto. A configuração foi mantida no histórico.</p>
                 )}
 
                 {product.config?.active && (
-                  <Form method="post" className="disableForm">
-                    <input type="hidden" name="intent" value="disable-product" />
-                    <input type="hidden" name="preorderId" value={product.config.id} />
-                    <button className="dangerGhost" disabled={busy}>Desativar neste produto</button>
-                  </Form>
+                  <div className="productActions">
+                    {product.sold > 0 && (
+                      <Form method="post">
+                        <input type="hidden" name="intent" value="mark-arrived" />
+                        <input type="hidden" name="preorderId" value={product.config.id} />
+                        <button className="arrived" disabled={busy}>Produto chegou · liberar saldos</button>
+                      </Form>
+                    )}
+                    <Form method="post">
+                      <input type="hidden" name="intent" value="disable-product" />
+                      <input type="hidden" name="preorderId" value={product.config.id} />
+                      <button className="dangerGhost" disabled={busy}>Desativar neste produto</button>
+                    </Form>
+                  </div>
                 )}
               </div>
             );
@@ -379,10 +454,14 @@ export default function PreorderDashboard() {
       </section>
 
       <section className="card">
-        <div className="sectionTitle"><div><h2>Últimas reservas</h2><p>Pedidos pagos identificados pelos webhooks da Shopify.</p></div></div>
+        <div className="sectionTitle">
+          <div><h2>Reservas e saldos</h2><p>Quando o item chegar, informe o frete e gere a cobrança do saldo.</p></div>
+        </div>
         <div className="tableWrap">
           <table>
-            <thead><tr><th>Pedido</th><th>Produto</th><th>Qtd.</th><th>Entrada</th><th>Saldo</th><th>Previsão</th><th>Status</th></tr></thead>
+            <thead>
+              <tr><th>Pedido</th><th>Produto</th><th>Qtd.</th><th>Entrada</th><th>Saldo</th><th>Previsão</th><th>Status</th><th>Cobrança</th></tr>
+            </thead>
             <tbody>
               {data.reservations.map((reservation) => (
                 <tr key={reservation.id}>
@@ -390,12 +469,27 @@ export default function PreorderDashboard() {
                   <td>{reservation.productTitle || "—"}</td>
                   <td>{reservation.quantity}</td>
                   <td>{money(reservation.depositTotal)}</td>
-                  <td>{money(reservation.balanceTotal)}</td>
+                  <td>{money(reservation.balanceTotal + reservation.shippingAmount)}</td>
                   <td>{reservation.expectedLabel || "—"}</td>
-                  <td><span className="status">{reservation.status}</span></td>
+                  <td><span className={`status status--${reservation.status.toLowerCase()}`}>{statusLabel[reservation.status] || reservation.status}</span></td>
+                  <td>
+                    {reservation.status === "BALANCE_PENDING" && (
+                      <Form method="post" className="invoiceForm">
+                        <input type="hidden" name="intent" value="send-balance" />
+                        <input type="hidden" name="reservationId" value={reservation.id} />
+                        <input name="shippingAmount" type="number" min="0" step="0.01" defaultValue="0" title="Frete" />
+                        <button className="smallPrimary" disabled={busy}>Cobrar</button>
+                      </Form>
+                    )}
+                    {reservation.status === "BALANCE_INVOICED" && reservation.invoiceUrl && (
+                      <a className="invoiceLink" href={reservation.invoiceUrl} target="_blank" rel="noreferrer">Abrir link</a>
+                    )}
+                    {reservation.status === "BALANCE_INVOICED" && !reservation.invoiceUrl && <span className="muted">Enviada por e-mail</span>}
+                    {reservation.status === "BALANCE_PAID" && <strong className="paid">Pago ✓</strong>}
+                  </td>
                 </tr>
               ))}
-              {!data.reservations.length && <tr><td colSpan={7} className="empty">Nenhuma reserva paga ainda.</td></tr>}
+              {!data.reservations.length && <tr><td colSpan={8} className="empty">Nenhuma reserva paga ainda.</td></tr>}
             </tbody>
           </table>
         </div>
@@ -433,6 +527,7 @@ const styles = `
   .primary { color:#fff; background:#202223; }
   .ghost { background:#f2f3f3; color:#3d3d3d; }
   .dangerGhost { background:#fff0f0; color:#8e1f1f; height:34px; }
+  .arrived { background:#e7f8ee; color:#116329; height:34px; }
   .ruleList { margin-top:16px; display:grid; gap:8px; }
   .rule { border:1px solid #e1e3e5; background:#fafbfb; border-radius:9px; padding:10px 12px; display:flex; justify-content:space-between; align-items:center; }
   .rule div { display:flex; align-items:center; gap:12px; }
@@ -449,18 +544,27 @@ const styles = `
   .numbers div { background:#f7f8f8; border-radius:8px; padding:9px 10px; }
   .numbers span { display:block; color:#777; font-size:10px; text-transform:uppercase; letter-spacing:.05em; margin-bottom:3px; }
   .numbers strong { font-size:14px; }
-  .disableForm { margin-top:10px; display:flex; justify-content:flex-end; }
+  .productActions { margin-top:10px; display:flex; justify-content:flex-end; gap:8px; }
   .warning { color:#8a6116; background:#fff8e5; border-radius:8px; padding:10px; font-size:13px; }
   .tableWrap { overflow:auto; }
   table { width:100%; border-collapse:collapse; font-size:13px; }
-  th { text-align:left; color:#6d7175; font-size:11px; text-transform:uppercase; letter-spacing:.04em; border-bottom:1px solid #e1e3e5; padding:9px; }
-  td { border-bottom:1px solid #f0f0f0; padding:11px 9px; }
-  .status { background:#f1f2f3; border-radius:999px; padding:4px 8px; font-size:10px; font-weight:800; }
+  th { text-align:left; color:#6d7175; font-size:11px; text-transform:uppercase; letter-spacing:.04em; border-bottom:1px solid #e1e3e5; padding:9px; white-space:nowrap; }
+  td { border-bottom:1px solid #f0f0f0; padding:11px 9px; vertical-align:middle; }
+  .status { background:#f1f2f3; border-radius:999px; padding:4px 8px; font-size:10px; font-weight:800; white-space:nowrap; }
+  .status--balance_paid { background:#e7f8ee; color:#116329; }
+  .status--balance_pending { background:#fff2b9; color:#725600; }
+  .status--balance_invoiced { background:#e8f0fe; color:#174ea6; }
+  .invoiceForm { display:flex; align-items:center; gap:5px; min-width:150px; }
+  .invoiceForm input { width:80px; height:32px; padding:0 7px; }
+  .smallPrimary { height:32px; padding:0 10px; background:#202223; color:#fff; }
+  .invoiceLink { color:#005bd3; font-weight:700; text-decoration:none; white-space:nowrap; }
+  .paid { color:#116329; white-space:nowrap; }
   .empty { color:#8c9196; padding:18px 2px; text-align:center; }
   @media (max-width: 760px) {
     .page { padding:18px 12px 40px; }
     .stats { grid-template-columns:1fr; }
     .ruleForm, .configForm { grid-template-columns:1fr; }
     .numbers { grid-template-columns:repeat(2,1fr); }
+    .productActions { flex-direction:column; }
   }
 `;
